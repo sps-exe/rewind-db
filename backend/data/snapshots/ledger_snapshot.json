@@ -1,0 +1,30 @@
+{
+  "accounts": {
+    "account-demo-362af2": {
+      "account_id": "account-demo-362af2",
+      "owner": "Alice",
+      "balance": 1350.0,
+      "status": "active",
+      "version": 4,
+      "event_count": 5,
+      "created_at": "2026-04-17T17:23:50.183384+00:00",
+      "last_updated": "2026-04-17T17:23:50.298026+00:00"
+    },
+    "account-demo-649171": {
+      "account_id": "account-demo-649171",
+      "owner": "Bob",
+      "balance": 1850.0,
+      "status": "active",
+      "version": 4,
+      "event_count": 5,
+      "created_at": "2026-04-17T17:23:50.263544+00:00",
+      "last_updated": "2026-04-17T17:23:50.301117+00:00"
+    }
+  },
+  "total_events_processed": 10,
+  "checkpoint": {
+    "account-demo-362af2": 4,
+    "account-demo-649171": 4
+  },
+  "saved_at": 1776446816.442456
+}

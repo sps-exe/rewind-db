@@ -1,0 +1,1358 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>RewindDB — Temporal Debugger</title>
+  <meta name="description" content="RewindDB: State is a pure function of events. Deterministic replay, failure recovery, and state validation powered by immutable event logs." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet" />
+  <style>
+    /* ─── DESIGN TOKENS ─────────────────────────────────────────── */
+    :root {
+      --surface:            #131313;
+      --surface-low:        #1b1b1b;
+      --surface-container:  #20201f;
+      --surface-high:       #2a2a2a;
+      --surface-highest:    #353535;
+      --surface-lowest:     #0e0e0e;
+      --on-surface:         #e5e2e1;
+      --on-surface-variant: #ddc1ae;
+      --outline:            #a48c7a;
+      --outline-variant:    #564334;
+      --primary:            #ffb77d;
+      --primary-container:  #ff8c00;
+      --secondary:          #fdb881;
+      --tertiary:           #85cfff;
+      --tertiary-container: #00b5fc;
+      --error:              #ffb4ab;
+      --font-ui:            'Inter', sans-serif;
+      --font-data:          'JetBrains Mono', monospace;
+      --radius-sm:          4px;
+      --radius-md:          6px;
+      --radius-lg:          12px;
+      --radius-pill:        999px;
+      --transition:         0.18s ease;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: var(--font-ui);
+      background: var(--surface);
+      color: var(--on-surface);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow-x: hidden;
+    }
+
+    /* ─── SCROLLBAR ─────────────────────────────────────────────── */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: var(--surface-low); }
+    ::-webkit-scrollbar-thumb { background: var(--outline-variant); border-radius: 3px; }
+
+    /* ─── LAYOUT ────────────────────────────────────────────────── */
+    .app-shell {
+      display: flex;
+      min-height: 100vh;
+    }
+
+    /* ─── SIDEBAR ───────────────────────────────────────────────── */
+    .sidebar {
+      width: 220px;
+      flex-shrink: 0;
+      background: var(--surface-container);
+      display: flex;
+      flex-direction: column;
+      padding: 24px 0;
+      position: fixed;
+      top: 0; left: 0; bottom: 0;
+      z-index: 100;
+    }
+
+    .sidebar-brand {
+      padding: 0 20px 28px;
+      border-bottom: 1px solid rgba(86,67,52,0.3);
+    }
+    .sidebar-brand .logo-mark {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .logo-icon {
+      width: 32px; height: 32px;
+      background: linear-gradient(135deg, var(--primary-container), var(--primary));
+      border-radius: var(--radius-sm);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 16px; color: #2f1500; font-weight: 700;
+      box-shadow: 0 0 12px rgba(255,140,0,0.3);
+    }
+    .brand-name { font-size: 15px; font-weight: 700; letter-spacing: -0.02em; }
+    .brand-tag  { font-size: 10px; color: var(--outline); font-family: var(--font-data); margin-top: 2px; }
+
+    .nav-list { list-style: none; padding: 16px 0; flex: 1; }
+    .nav-item {
+      padding: 0 12px;
+      margin-bottom: 2px;
+    }
+    .nav-link {
+      display: flex; align-items: center; gap: 10px;
+      padding: 9px 12px;
+      border-radius: var(--radius-md);
+      cursor: pointer;
+      color: var(--on-surface-variant);
+      font-size: 13.5px; font-weight: 500;
+      transition: all var(--transition);
+      text-decoration: none;
+      user-select: none;
+    }
+    .nav-link:hover { background: var(--surface-high); color: var(--on-surface); }
+    .nav-link.active {
+      background: rgba(255,140,0,0.15);
+      color: var(--primary);
+    }
+    .nav-link .material-icons { font-size: 18px; }
+
+    .sidebar-status {
+      padding: 16px 20px;
+      border-top: 1px solid rgba(86,67,52,0.3);
+    }
+    .status-dot {
+      display: inline-block;
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      background: #4caf50;
+      margin-right: 7px;
+      animation: pulse-dot 2s infinite;
+    }
+    .status-dot.offline { background: var(--error); animation: none; }
+    @keyframes pulse-dot {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+    .status-label { font-size: 11px; color: var(--outline); font-family: var(--font-data); }
+
+    /* ─── MAIN ──────────────────────────────────────────────────── */
+    .main-content {
+      margin-left: 220px;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      min-height: 100vh;
+    }
+
+    /* ─── TOP BAR ───────────────────────────────────────────────── */
+    .topbar {
+      height: 56px;
+      background: var(--surface-low);
+      display: flex; align-items: center;
+      padding: 0 28px;
+      gap: 16px;
+      position: sticky; top: 0; z-index: 50;
+    }
+    .topbar-title { font-size: 15px; font-weight: 600; flex: 1; }
+    .topbar-actions { display: flex; align-items: center; gap: 10px; }
+    .chip {
+      padding: 4px 10px;
+      border-radius: var(--radius-pill);
+      background: var(--surface-highest);
+      font-size: 11px;
+      font-family: var(--font-data);
+      color: var(--on-surface-variant);
+    }
+    .chip.primary { background: rgba(255,140,0,0.15); color: var(--primary); }
+    .chip.tertiary { background: rgba(0,181,252,0.12); color: var(--tertiary); }
+    .chip.success { background: rgba(76,175,80,0.12); color: #81c784; }
+    .chip.error   { background: rgba(255,180,171,0.12); color: var(--error); }
+
+    /* ─── PAGE CONTENT ──────────────────────────────────────────── */
+    .page { display: none; padding: 28px; animation: fadeIn 0.2s ease; }
+    .page.active { display: block; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+
+    /* ─── SECTION HEADERS ───────────────────────────────────────── */
+    .section-header {
+      margin-bottom: 20px;
+    }
+    .section-title { font-size: 20px; font-weight: 700; letter-spacing: -0.02em; }
+    .section-sub   { font-size: 13px; color: var(--outline); margin-top: 4px; }
+
+    /* ─── GRID ──────────────────────────────────────────────────── */
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; }
+    .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+
+    /* ─── CARDS ─────────────────────────────────────────────────── */
+    .card {
+      background: var(--surface-low);
+      border-radius: var(--radius-lg);
+      padding: 20px;
+    }
+    .card-label {
+      font-size: 11px;
+      color: var(--outline);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: 8px;
+      font-family: var(--font-data);
+    }
+    .card-value {
+      font-size: 28px;
+      font-weight: 700;
+      color: var(--primary);
+      font-family: var(--font-data);
+      letter-spacing: -0.02em;
+    }
+    .card-sub { font-size: 12px; color: var(--outline); margin-top: 4px; }
+
+    /* ─── BTN ───────────────────────────────────────────────────── */
+    .btn {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 9px 18px;
+      border-radius: var(--radius-sm);
+      font-size: 13px; font-weight: 600;
+      cursor: pointer;
+      border: none;
+      transition: all var(--transition);
+      font-family: var(--font-ui);
+    }
+    .btn-primary {
+      background: linear-gradient(135deg, var(--primary-container), var(--primary));
+      color: #2f1500;
+      box-shadow: 0 0 12px rgba(255,140,0,0.2);
+    }
+    .btn-primary:hover { box-shadow: 0 0 20px rgba(255,140,0,0.35); filter: brightness(1.05); }
+    .btn-primary:active { transform: scale(0.98); }
+    .btn-secondary {
+      background: var(--surface-highest);
+      color: var(--on-surface);
+    }
+    .btn-secondary:hover { background: var(--surface-high); }
+    .btn-danger {
+      background: rgba(255,180,171,0.12);
+      color: var(--error);
+      border: 1px solid rgba(255,180,171,0.15);
+    }
+    .btn-danger:hover { background: rgba(255,180,171,0.2); }
+    .btn .material-icons { font-size: 16px; }
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    /* ─── INPUT ─────────────────────────────────────────────────── */
+    .input-group { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+    input[type="text"], input[type="number"], select {
+      background: var(--surface-lowest);
+      border: 1px solid rgba(86,67,52,0.4);
+      color: var(--on-surface);
+      border-radius: var(--radius-sm);
+      padding: 8px 12px;
+      font-size: 13px;
+      font-family: var(--font-data);
+      outline: none;
+      transition: border-color var(--transition);
+      min-width: 180px;
+    }
+    input[type="text"]:focus, input[type="number"]:focus, select:focus {
+      border-color: var(--primary-container);
+    }
+    select option { background: var(--surface-high); }
+
+    /* ─── CODE BLOCK ────────────────────────────────────────────── */
+    .code-block {
+      background: var(--surface-lowest);
+      border-radius: var(--radius-sm);
+      padding: 14px 16px;
+      font-family: var(--font-data);
+      font-size: 12px;
+      color: var(--on-surface);
+      overflow-x: auto;
+      line-height: 1.6;
+      max-height: 300px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+    }
+    .code-block .key   { color: var(--tertiary); }
+    .code-block .value { color: var(--primary); }
+    .code-block .str   { color: #81c784; }
+
+    /* ─── EVENT LOG ─────────────────────────────────────────────── */
+    .event-list { display: flex; flex-direction: column; gap: 8px; }
+    .event-item {
+      background: var(--surface-container);
+      border-radius: var(--radius-md);
+      padding: 12px 14px;
+      display: flex; align-items: flex-start; gap: 12px;
+      position: relative;
+    }
+    .event-stripe {
+      width: 2px;
+      border-radius: 2px;
+      align-self: stretch;
+      flex-shrink: 0;
+    }
+    .stripe-deposit    { background: #4caf50; }
+    .stripe-withdraw   { background: var(--error); }
+    .stripe-create     { background: var(--tertiary); }
+    .stripe-transfer   { background: var(--secondary); }
+    .stripe-freeze     { background: var(--outline); }
+    .stripe-default    { background: var(--primary); }
+
+    .event-content { flex: 1; }
+    .event-type {
+      font-size: 12px; font-weight: 600;
+      font-family: var(--font-data);
+      color: var(--primary);
+    }
+    .event-meta {
+      font-size: 11px; color: var(--outline);
+      font-family: var(--font-data);
+      margin-top: 3px;
+    }
+    .event-data {
+      font-size: 11px; color: var(--on-surface-variant);
+      font-family: var(--font-data);
+      margin-top: 6px;
+    }
+    .event-version {
+      font-size: 11px; color: var(--outline);
+      font-family: var(--font-data);
+      background: var(--surface-highest);
+      padding: 2px 7px;
+      border-radius: var(--radius-pill);
+      flex-shrink: 0;
+    }
+
+    /* ─── ACCOUNT TABLE ─────────────────────────────────────────── */
+    .account-table { width: 100%; border-collapse: collapse; }
+    .account-table th {
+      text-align: left;
+      font-size: 11px;
+      color: var(--outline);
+      font-family: var(--font-data);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      padding: 8px 12px;
+      border-bottom: 1px solid rgba(86,67,52,0.25);
+    }
+    .account-table td {
+      padding: 10px 12px;
+      font-size: 13px;
+      font-family: var(--font-data);
+      border-bottom: 1px solid rgba(86,67,52,0.1);
+    }
+    .account-table tr:last-child td { border-bottom: none; }
+    .account-table tbody tr:hover td { background: var(--surface-container); }
+    .balance-positive { color: #81c784; }
+    .balance-zero    { color: var(--outline); }
+
+    /* ─── FAILURE CARDS ─────────────────────────────────────────── */
+    .failure-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+    .failure-card {
+      background: var(--surface-container);
+      border-radius: var(--radius-lg);
+      padding: 20px;
+      border: 1px solid rgba(86,67,52,0.2);
+      transition: border-color var(--transition), background var(--transition);
+    }
+    .failure-card:hover { border-color: rgba(255,140,0,0.3); }
+    .failure-card-header {
+      display: flex; align-items: center; gap: 12px;
+      margin-bottom: 12px;
+    }
+    .failure-icon {
+      width: 38px; height: 38px;
+      border-radius: var(--radius-md);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 18px;
+    }
+    .fi-crash    { background: rgba(255,180,171,0.1); color: var(--error); }
+    .fi-dup      { background: rgba(255,183,125,0.1); color: var(--primary); }
+    .fi-order    { background: rgba(133,207,255,0.1); color: var(--tertiary); }
+    .fi-corrupt  { background: rgba(253,184,129,0.1); color: var(--secondary); }
+    .fi-missing  { background: rgba(164,140,122,0.1); color: var(--outline); }
+    .fi-concur   { background: rgba(0,181,252,0.1); color: var(--tertiary-container); }
+    .failure-title { font-size: 14px; font-weight: 600; }
+    .failure-desc  { font-size: 12px; color: var(--on-surface-variant); margin-top: 2px; }
+    .failure-result {
+      margin-top: 12px;
+      border-radius: var(--radius-sm);
+      padding: 10px 12px;
+      font-size: 12px;
+      font-family: var(--font-data);
+      display: none;
+    }
+    .failure-result.show { display: block; }
+    .result-pass { background: rgba(76,175,80,0.1); color: #81c784; border-left: 3px solid #4caf50; }
+    .result-fail { background: rgba(255,180,171,0.1); color: var(--error); border-left: 3px solid var(--error); }
+
+    /* ─── METRICS BARS ──────────────────────────────────────────── */
+    .metric-bar-container { display: flex; flex-direction: column; gap: 14px; }
+    .metric-bar-item {}
+    .metric-bar-header { display: flex; justify-content: space-between; margin-bottom: 6px; }
+    .metric-bar-label  { font-size: 12px; color: var(--on-surface-variant); }
+    .metric-bar-val    { font-size: 12px; font-family: var(--font-data); color: var(--primary); }
+    .metric-bar-track  {
+      height: 6px; background: var(--surface-highest); border-radius: 3px; overflow: hidden;
+    }
+    .metric-bar-fill   {
+      height: 100%; border-radius: 3px;
+      background: linear-gradient(90deg, var(--primary-container), var(--primary));
+      transition: width 0.6s ease;
+    }
+    .metric-bar-fill.teal {
+      background: linear-gradient(90deg, #006496, var(--tertiary));
+    }
+
+    /* ─── TOAST ─────────────────────────────────────────────────── */
+    #toast-container {
+      position: fixed; bottom: 24px; right: 24px;
+      z-index: 9999;
+      display: flex; flex-direction: column; gap: 8px;
+    }
+    .toast {
+      padding: 12px 18px;
+      border-radius: var(--radius-md);
+      font-size: 13px;
+      font-family: var(--font-data);
+      backdrop-filter: blur(24px);
+      background: rgba(53,53,53,0.9);
+      border-left: 3px solid var(--primary);
+      color: var(--on-surface);
+      animation: slideIn 0.2s ease;
+      max-width: 340px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+    }
+    .toast.error  { border-color: var(--error); }
+    .toast.success{ border-color: #4caf50; }
+    .toast.info   { border-color: var(--tertiary); }
+    @keyframes slideIn { from { opacity: 0; transform: translateX(20px); } to { opacity: 1; transform: none; } }
+
+    /* ─── SPINNER ───────────────────────────────────────────────── */
+    .spinner {
+      width: 16px; height: 16px;
+      border: 2px solid rgba(255,183,125,0.2);
+      border-top-color: var(--primary);
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      display: inline-block;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ─── VALIDATION LIST ───────────────────────────────────────── */
+    .validation-item {
+      display: flex; align-items: flex-start; gap: 10px;
+      padding: 10px 12px;
+      border-radius: var(--radius-sm);
+      margin-bottom: 8px;
+      font-size: 12.5px;
+      font-family: var(--font-data);
+    }
+    .vi-ok      { background: rgba(76,175,80,0.08); color: #81c784; }
+    .vi-error   { background: rgba(255,180,171,0.08); color: var(--error); }
+    .vi-warning { background: rgba(255,183,125,0.08); color: var(--primary); }
+    .vi-icon    { font-size: 16px; margin-top: 1px; flex-shrink: 0; }
+
+    /* ─── SEPARATOR ─────────────────────────────────────────────── */
+    .sep { height: 1px; background: rgba(86,67,52,0.2); margin: 24px 0; }
+
+    /* ─── REPLAY PROGRESS ───────────────────────────────────────── */
+    .replay-track {
+      height: 8px; background: var(--surface-highest);
+      border-radius: 4px; overflow: hidden; position: relative;
+    }
+    .replay-fill {
+      height: 100%;
+      background: linear-gradient(90deg, var(--primary-container), var(--primary));
+      border-radius: 4px;
+      transition: width 0.4s ease;
+      position: relative;
+    }
+    .replay-fill::after {
+      content: '';
+      position: absolute; right: 0; top: 0; bottom: 0;
+      width: 20px;
+      background: linear-gradient(90deg, transparent, rgba(255,183,125,0.6));
+      animation: shimmer 1.5s infinite;
+    }
+    @keyframes shimmer { to { transform: translateX(10px); opacity: 0; } }
+
+    /* ─── HOME HERO ─────────────────────────────────────────────── */
+    .hero-banner {
+      background: linear-gradient(135deg, rgba(255,140,0,0.06), rgba(133,207,255,0.04));
+      border: 1px solid rgba(255,140,0,0.12);
+      border-radius: var(--radius-lg);
+      padding: 32px 36px;
+      margin-bottom: 24px;
+      position: relative;
+      overflow: hidden;
+    }
+    .hero-banner::before {
+      content: '';
+      position: absolute; top: -60px; right: -60px;
+      width: 200px; height: 200px;
+      background: radial-gradient(circle, rgba(255,140,0,0.08), transparent 70%);
+    }
+    .hero-title {
+      font-size: 26px; font-weight: 700;
+      letter-spacing: -0.03em;
+      background: linear-gradient(135deg, var(--on-surface), var(--primary));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      margin-bottom: 8px;
+    }
+    .hero-sub { font-size: 14px; color: var(--on-surface-variant); max-width: 500px; line-height: 1.5; }
+    .hero-actions { display: flex; gap: 10px; margin-top: 20px; }
+    .hero-eq {
+      position: absolute; right: 36px; top: 50%; transform: translateY(-50%);
+      font-size: 13px; font-family: var(--font-data);
+      color: rgba(255,183,125,0.25);
+      line-height: 2;
+      text-align: right;
+      pointer-events: none;
+    }
+
+    /* ─── MISC ──────────────────────────────────────────────────── */
+    .row { display: flex; gap: 16px; }
+    .col { flex: 1; }
+    .mt-12 { margin-top: 12px; }
+    .mt-16 { margin-top: 16px; }
+    .mt-20 { margin-top: 20px; }
+    .mb-12 { margin-bottom: 12px; }
+    .mb-16 { margin-bottom: 16px; }
+    .label-sm { font-size: 11px; color: var(--outline); margin-bottom: 6px; font-family: var(--font-data); }
+    .text-primary { color: var(--primary); }
+    .text-tertiary { color: var(--tertiary); }
+    .text-error   { color: var(--error); }
+    .text-success { color: #81c784; }
+    .mono { font-family: var(--font-data); }
+    .empty-state { text-align: center; padding: 40px 20px; color: var(--outline); font-size: 13px; }
+    .empty-state .material-icons { font-size: 36px; display: block; margin-bottom: 10px; opacity: 0.4; }
+
+    /* Truncate long IDs */
+    .truncate { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 180px; display: inline-block; vertical-align: middle; }
+  </style>
+</head>
+<body>
+
+<div id="toast-container"></div>
+
+<div class="app-shell">
+  <!-- ─── SIDEBAR ──────────────────────────────────────────── -->
+  <nav class="sidebar">
+    <div class="sidebar-brand">
+      <div class="logo-mark">
+        <div class="logo-icon">⟳</div>
+        <div>
+          <div class="brand-name">RewindDB</div>
+          <div class="brand-tag">temporal debugger</div>
+        </div>
+      </div>
+    </div>
+    <ul class="nav-list">
+      <li class="nav-item">
+        <a class="nav-link active" data-page="dashboard" id="nav-dashboard">
+          <span class="material-icons">dashboard</span> Dashboard
+        </a>
+      </li>
+      <li class="nav-item">
+        <a class="nav-link" data-page="timeline" id="nav-timeline">
+          <span class="material-icons">history</span> Timeline
+        </a>
+      </li>
+      <li class="nav-item">
+        <a class="nav-link" data-page="replay" id="nav-replay">
+          <span class="material-icons">play_circle</span> Replay Engine
+        </a>
+      </li>
+      <li class="nav-item">
+        <a class="nav-link" data-page="failure" id="nav-failure">
+          <span class="material-icons">biotech</span> Failure Lab
+        </a>
+      </li>
+      <li class="nav-item">
+        <a class="nav-link" data-page="validation" id="nav-validation">
+          <span class="material-icons">fact_check</span> State Validation
+        </a>
+      </li>
+      <li class="nav-item">
+        <a class="nav-link" data-page="metrics" id="nav-metrics">
+          <span class="material-icons">query_stats</span> Metrics
+        </a>
+      </li>
+    </ul>
+    <div class="sidebar-status">
+      <span class="status-dot" id="backend-status-dot"></span>
+      <span class="status-label" id="backend-status-text">connecting…</span>
+    </div>
+  </nav>
+
+  <!-- ─── MAIN ─────────────────────────────────────────────── -->
+  <main class="main-content">
+    <div class="topbar">
+      <div class="topbar-title" id="topbar-title">Dashboard</div>
+      <div class="topbar-actions">
+        <span class="chip tertiary mono" id="topbar-stream-count">— streams</span>
+        <span class="chip primary mono" id="topbar-event-count">— events</span>
+        <button class="btn btn-secondary" id="btn-seed" style="padding:6px 12px;font-size:12px;">
+          <span class="material-icons" style="font-size:14px;">add_circle</span> Seed
+        </button>
+        <button class="btn btn-secondary" id="btn-refresh" style="padding:6px 12px;font-size:12px;">
+          <span class="material-icons" style="font-size:14px;">refresh</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- ═══ PAGE: DASHBOARD ══════════════════════════════════ -->
+    <div class="page active" id="page-dashboard">
+      <div class="hero-banner">
+        <div class="hero-title">State is a Pure Function of Events</div>
+        <div class="hero-sub">Deterministic replay, failure recovery, and state validation powered by immutable event logs. No state is stored — everything is computed from the log.</div>
+        <div class="hero-actions">
+          <button class="btn btn-primary" id="hero-seed-btn">
+            <span class="material-icons">dataset</span> Seed Demo Data
+          </button>
+          <button class="btn btn-secondary" id="hero-replay-btn">
+            <span class="material-icons">play_circle</span> Run Full Replay
+          </button>
+        </div>
+        <div class="hero-eq">
+          S(t) = fold(E, S₀)<br/>
+          ∀ duplicate → skip<br/>
+          ∀ order gap → reject<br/>
+          S = replay(log)
+        </div>
+      </div>
+
+      <!-- Stat row -->
+      <div class="grid-4 mb-16">
+        <div class="card">
+          <div class="card-label">Total Accounts</div>
+          <div class="card-value" id="stat-accounts">—</div>
+          <div class="card-sub">active streams</div>
+        </div>
+        <div class="card">
+          <div class="card-label">Total Events</div>
+          <div class="card-value" id="stat-events">—</div>
+          <div class="card-sub">immutable log entries</div>
+        </div>
+        <div class="card">
+          <div class="card-label">Total Balance</div>
+          <div class="card-value" id="stat-balance">—</div>
+          <div class="card-sub">across all accounts</div>
+        </div>
+        <div class="card">
+          <div class="card-label">System State</div>
+          <div class="card-value text-success" id="stat-health" style="font-size:18px;">—</div>
+          <div class="card-sub" id="stat-health-sub">checking…</div>
+        </div>
+      </div>
+
+      <!-- Account table + quick events -->
+      <div class="row">
+        <div class="col">
+          <div class="card">
+            <div class="label-sm">ENTITY STATE</div>
+            <div id="accounts-table-wrap">
+              <div class="empty-state"><span class="material-icons">account_balance</span>No accounts yet — add seed data</div>
+            </div>
+          </div>
+        </div>
+        <div class="col">
+          <div class="card">
+            <div class="label-sm">RECENT EVENTS</div>
+            <div id="dashboard-events" class="event-list" style="max-height:320px;overflow-y:auto;">
+              <div class="empty-state"><span class="material-icons">timeline</span>No events yet</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ PAGE: TIMELINE ═══════════════════════════════════ -->
+    <div class="page" id="page-timeline">
+      <div class="section-header">
+        <div class="section-title">Event Timeline</div>
+        <div class="section-sub">Immutable, ordered log of every state transition</div>
+      </div>
+
+      <div class="card mb-16">
+        <div class="input-group">
+          <label class="label-sm" style="margin:0;width:auto;">Stream ID</label>
+          <select id="timeline-stream-select">
+            <option value="">Select account…</option>
+          </select>
+          <button class="btn btn-primary" id="btn-load-timeline">
+            <span class="material-icons">search</span> Load Events
+          </button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div id="timeline-header" class="mb-12" style="display:none;justify-content:space-between;align-items:center;">
+          <span class="label-sm" style="margin:0;" id="timeline-stream-label"></span>
+          <span class="chip" id="timeline-event-count">— events</span>
+        </div>
+        <div id="timeline-events" class="event-list">
+          <div class="empty-state"><span class="material-icons">timeline</span>Select a stream to view events</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ PAGE: REPLAY ENGINE ══════════════════════════════ -->
+    <div class="page" id="page-replay">
+      <div class="section-header">
+        <div class="section-title">Replay Engine</div>
+        <div class="section-sub">Reconstruct correct state from the event log — with or without snapshots</div>
+      </div>
+
+      <div class="row mb-16">
+        <div class="col">
+          <div class="card">
+            <div class="label-sm">REPLAY MODE</div>
+            <div class="input-group mt-12">
+              <select id="replay-mode-select">
+                <option value="full">Full Replay (from event zero)</option>
+                <option value="snapshot">Snapshot-Assisted (delta only)</option>
+              </select>
+              <button class="btn btn-primary" id="btn-run-replay">
+                <span class="material-icons">play_arrow</span> Run Replay
+              </button>
+            </div>
+            <div class="mt-16">
+              <div class="replay-track">
+                <div class="replay-fill" id="replay-progress" style="width:0%"></div>
+              </div>
+            </div>
+            <div class="mt-12" id="replay-status-msg" style="font-size:12px;color:var(--outline);font-family:var(--font-data);">Ready</div>
+          </div>
+        </div>
+        <div class="col">
+          <div class="card">
+            <div class="label-sm">REPLAY METRICS</div>
+            <table style="width:100%;margin-top:10px;" id="replay-metrics-table">
+              <tr><td class="label-sm" style="padding:5px 0">Mode</td><td class="mono" style="text-align:right;font-size:12px;" id="rm-mode">—</td></tr>
+              <tr><td class="label-sm" style="padding:5px 0">Duration</td><td class="mono text-primary" style="text-align:right;font-size:12px;" id="rm-duration">—</td></tr>
+              <tr><td class="label-sm" style="padding:5px 0">Events Processed</td><td class="mono" style="text-align:right;font-size:12px;" id="rm-events">—</td></tr>
+              <tr><td class="label-sm" style="padding:5px 0">Streams</td><td class="mono" style="text-align:right;font-size:12px;" id="rm-streams">—</td></tr>
+              <tr><td class="label-sm" style="padding:5px 0">Validation</td><td class="mono text-success" style="text-align:right;font-size:12px;" id="rm-valid">—</td></tr>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="label-sm">RECONSTRUCTED STATE</div>
+        <div id="replay-state-out" class="code-block mt-12">Run replay to see reconstructed state…</div>
+      </div>
+    </div>
+
+    <!-- ═══ PAGE: FAILURE LAB ════════════════════════════════ -->
+    <div class="page" id="page-failure">
+      <div class="section-header">
+        <div class="section-title">Failure Simulation Lab</div>
+        <div class="section-sub">Inject chaos — prove the system recovers deterministically every time</div>
+      </div>
+
+      <!-- Global account selector -->
+      <div class="card mb-16">
+        <div class="input-group">
+          <label class="label-sm" style="margin:0;width:auto;">Target Account</label>
+          <select id="failure-stream-select">
+            <option value="">Select account…</option>
+          </select>
+          <span class="chip" id="failure-current-balance">—</span>
+        </div>
+      </div>
+
+      <div class="failure-grid" id="failure-grid">
+        <!-- Cards are rendered by JS -->
+      </div>
+
+      <div class="sep"></div>
+
+      <div class="card" id="failure-diagnostics-card">
+        <div class="label-sm">RECOVERY DIAGNOSTICS</div>
+        <div id="failure-log" style="margin-top:12px;">
+          <div class="empty-state"><span class="material-icons">health_and_safety</span>Inject a failure to see recovery diagnostics</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ PAGE: STATE VALIDATION ══════════════════════════ -->
+    <div class="page" id="page-validation">
+      <div class="section-header">
+        <div class="section-title">State Validation</div>
+        <div class="section-sub">Invariant checks — prove replayed state is mathematically correct</div>
+      </div>
+
+      <div class="row mb-16">
+        <div class="col">
+          <div class="card">
+            <div class="label-sm">VALIDATION SUMMARY</div>
+            <div class="mt-16" id="validation-summary">
+              <div class="empty-state"><span class="material-icons">fact_check</span>Run validation to check invariants</div>
+            </div>
+          </div>
+        </div>
+        <div class="col">
+          <div class="card">
+            <div class="label-sm">INVARIANT CHECKS</div>
+            <div id="validation-findings" class="mt-12">
+              <div class="empty-state"><span class="material-icons">rule</span>No findings yet</div>
+            </div>
+            <div class="mt-16">
+              <button class="btn btn-primary" id="btn-validate">
+                <span class="material-icons">verified</span> Run Validation
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="label-sm">ACCOUNT INVARIANTS</div>
+        <div id="validation-accounts" class="mt-12">
+          <div class="empty-state"><span class="material-icons">account_balance</span>No account state yet</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ PAGE: METRICS ════════════════════════════════════ -->
+    <div class="page" id="page-metrics">
+      <div class="section-header">
+        <div class="section-title">Performance Metrics</div>
+        <div class="section-sub">Compare full vs snapshot-assisted replay performance</div>
+      </div>
+
+      <div class="grid-2 mb-16">
+        <div class="card" id="full-replay-perf">
+          <div class="card-label">Full Replay Duration</div>
+          <div class="card-value" id="perf-full-ms">—</div>
+          <div class="card-sub">ms — across all streams</div>
+        </div>
+        <div class="card" id="snap-replay-perf">
+          <div class="card-label">Snapshot Replay Duration</div>
+          <div class="card-value text-tertiary" id="perf-snap-ms">—</div>
+          <div class="card-sub">ms — delta events only</div>
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="col">
+          <div class="card">
+            <div class="label-sm">THROUGHPUT ANALYSIS</div>
+            <div class="metric-bar-container mt-16" id="metric-bars">
+              <div class="empty-state"><span class="material-icons">bar_chart</span>Run benchmarks to see analysis</div>
+            </div>
+            <div class="mt-16">
+              <button class="btn btn-primary" id="btn-bench">
+                <span class="material-icons">speed</span> Run Benchmarks
+              </button>
+            </div>
+          </div>
+        </div>
+        <div class="col">
+          <div class="card">
+            <div class="label-sm">BENCHMARK LOG</div>
+            <div id="bench-log" class="code-block mt-12" style="min-height:180px;">Click "Run Benchmarks" to compare modes…</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </main><!-- end .main-content -->
+</div><!-- end .app-shell -->
+
+<script>
+/* ─── CONFIG ──────────────────────────────────────────────── */
+const API = 'http://localhost:8001';
+
+/* ─── HELPERS ─────────────────────────────────────────────── */
+async function api(method, path, body) {
+  const opts = { method, headers: { 'Content-Type': 'application/json' } };
+  if (body) opts.body = JSON.stringify(body);
+  const r = await fetch(API + path, opts);
+  if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+  return r.json();
+}
+
+function toast(msg, type = '') {
+  const el = document.createElement('div');
+  el.className = `toast ${type}`;
+  el.textContent = msg;
+  document.getElementById('toast-container').appendChild(el);
+  setTimeout(() => el.remove(), 4000);
+}
+
+function fmt(n) { return typeof n === 'number' ? n.toLocaleString() : n; }
+function fmtMs(ms) { return ms != null ? `${parseFloat(ms).toFixed(2)}ms` : '—'; }
+function fmtBal(b) { return b != null ? `$${parseFloat(b).toFixed(2)}` : '—'; }
+function ago(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  return d.toLocaleTimeString();
+}
+function stripeClass(type) {
+  if (!type) return 'stripe-default';
+  const t = type.toLowerCase();
+  if (t.includes('deposit') || t.includes('creat')) return 'stripe-create';
+  if (t.includes('withdraw')) return 'stripe-withdraw';
+  if (t.includes('deposit')) return 'stripe-deposit';
+  if (t.includes('transfer')) return 'stripe-transfer';
+  if (t.includes('frozen') || t.includes('freeze')) return 'stripe-freeze';
+  return 'stripe-default';
+}
+function syntaxHL(json) {
+  if (typeof json !== 'string') json = JSON.stringify(json, null, 2);
+  return json
+    .replace(/("[\w\s]+")\s*:/g, '<span class="key">$1</span>:')
+    .replace(/:\s*(".*?")/g, ': <span class="str">$1</span>')
+    .replace(/:\s*(-?\d+\.?\d*)/g, ': <span class="value">$1</span>');
+}
+
+/* ─── NAVIGATION ──────────────────────────────────────────── */
+const PAGES = ['dashboard','timeline','replay','failure','validation','metrics'];
+const TITLES = {
+  dashboard: 'Dashboard',
+  timeline:  'Event Timeline',
+  replay:    'Replay Engine',
+  failure:   'Failure Lab',
+  validation:'State Validation',
+  metrics:   'Performance Metrics'
+};
+let currentPage = 'dashboard';
+
+function showPage(id) {
+  PAGES.forEach(p => {
+    document.getElementById(`page-${p}`).classList.toggle('active', p === id);
+    document.getElementById(`nav-${p}`).classList.toggle('active', p === id);
+  });
+  document.getElementById('topbar-title').textContent = TITLES[id];
+  currentPage = id;
+  if (id === 'dashboard') loadDashboard();
+  if (id === 'timeline')  loadStreamOptions();
+  if (id === 'failure')   { loadStreamOptions(true); buildFailureCards(); }
+  if (id === 'validation') {} // manual trigger
+  if (id === 'metrics')   {}
+}
+
+document.querySelectorAll('.nav-link').forEach(a => {
+  a.addEventListener('click', () => showPage(a.dataset.page));
+});
+document.getElementById('hero-replay-btn').addEventListener('click', () => showPage('replay'));
+
+/* ─── GLOBAL STATE ────────────────────────────────────────── */
+let streams = [];
+
+/* ─── BACKEND STATUS ──────────────────────────────────────── */
+async function checkHealth() {
+  const dot = document.getElementById('backend-status-dot');
+  const txt = document.getElementById('backend-status-text');
+  try {
+    const d = await api('GET', '/health');
+    dot.className = 'status-dot';
+    txt.textContent = 'backend ok';
+  } catch {
+    dot.className = 'status-dot offline';
+    txt.textContent = 'offline';
+  }
+}
+checkHealth();
+setInterval(checkHealth, 8000);
+
+/* ─── LOAD STREAMS (GLOBAL) ───────────────────────────────── */
+async function loadStreams() {
+  try {
+    const d = await api('GET', '/queries/streams');
+    streams = d.streams || [];
+    document.getElementById('topbar-stream-count').textContent = `${streams.length} streams`;
+    return streams;
+  } catch { return []; }
+}
+
+function populateStreamSelect(selectId) {
+  const sel = document.getElementById(selectId);
+  const cur = sel.value;
+  sel.innerHTML = '<option value="">Select account…</option>';
+  streams.forEach(s => {
+    const o = document.createElement('option');
+    o.value = s; o.textContent = s;
+    sel.appendChild(o);
+  });
+  if (cur) sel.value = cur;
+}
+
+async function loadStreamOptions(alsoFailure = false) {
+  await loadStreams();
+  populateStreamSelect('timeline-stream-select');
+  if (alsoFailure) populateStreamSelect('failure-stream-select');
+}
+
+/* ─── SEED ────────────────────────────────────────────────── */
+async function seedData() {
+  try {
+    toast('Seeding demo accounts…', 'info');
+    const d = await api('POST', '/simulate/seed', { num_accounts: 3, transactions_per_account: 4 });
+    toast(`Seeded ${d.seeded_accounts.length} accounts`, 'success');
+    await loadDashboard();
+  } catch(e) { toast('Seed failed: ' + e.message, 'error'); }
+}
+document.getElementById('btn-seed').addEventListener('click', seedData);
+document.getElementById('hero-seed-btn').addEventListener('click', seedData);
+document.getElementById('btn-refresh').addEventListener('click', () => { if(currentPage==='dashboard') loadDashboard(); });
+
+/* ─── DASHBOARD ───────────────────────────────────────────── */
+async function loadDashboard() {
+  await loadStreams();
+  if (!streams.length) {
+    document.getElementById('stat-accounts').textContent = '0';
+    document.getElementById('stat-events').textContent = '0';
+    document.getElementById('stat-balance').textContent = '$0';
+    document.getElementById('stat-health').textContent = 'EMPTY';
+    document.getElementById('stat-health-sub').textContent = 'no data';
+    document.getElementById('topbar-event-count').textContent = '— events';
+    return;
+  }
+
+  // Run full replay to get current state
+  try {
+    const data = await api('GET', '/queries/replay?mode=full');
+    const state = data.state;
+    const accounts = Object.values(state.accounts || {});
+    const totalBal = data.validation?.total_balance ?? 0;
+    const totalEvents = state.total_events_processed;
+
+    document.getElementById('stat-accounts').textContent = accounts.length;
+    document.getElementById('stat-events').textContent = totalEvents;
+    document.getElementById('stat-balance').textContent = fmtBal(totalBal);
+    document.getElementById('topbar-event-count').textContent = `${totalEvents} events`;
+    document.getElementById('stat-health').textContent = data.validation?.is_valid ? '✓ VALID' : '✗ INVALID';
+    document.getElementById('stat-health').className = 'card-value ' + (data.validation?.is_valid ? 'text-success' : 'text-error');
+    document.getElementById('stat-health-sub').textContent = data.validation?.is_valid ? 'all invariants pass' : 'invariant violations detected';
+
+    renderAccountTable(accounts);
+    await renderRecentEvents();
+  } catch(e) { toast('Dashboard load failed: ' + e.message, 'error'); }
+}
+
+function renderAccountTable(accounts) {
+  if (!accounts.length) {
+    document.getElementById('accounts-table-wrap').innerHTML = '<div class="empty-state"><span class="material-icons">account_balance</span>No accounts yet</div>';
+    return;
+  }
+  let html = `<table class="account-table"><thead><tr>
+    <th>Account ID</th><th>Owner</th><th>Balance</th><th>Status</th><th>Events</th>
+  </tr></thead><tbody>`;
+  accounts.forEach(a => {
+    html += `<tr>
+      <td class="mono"><span class="truncate" title="${a.account_id}">${a.account_id}</span></td>
+      <td>${a.owner}</td>
+      <td class="mono ${a.balance > 0 ? 'balance-positive' : 'balance-zero'}">${fmtBal(a.balance)}</td>
+      <td><span class="chip ${a.status === 'active' ? 'success' : 'error'}">${a.status}</span></td>
+      <td class="mono">${a.event_count}</td>
+    </tr>`;
+  });
+  html += '</tbody></table>';
+  document.getElementById('accounts-table-wrap').innerHTML = html;
+}
+
+async function renderRecentEvents() {
+  if (!streams.length) { document.getElementById('dashboard-events').innerHTML = '<div class="empty-state"><span class="material-icons">timeline</span>No events yet</div>'; return; }
+  try {
+    const events = [];
+    for (const s of streams.slice(0, 2)) {
+      const d = await api('GET', `/queries/events/${s}`);
+      events.push(...(d.events || []));
+    }
+    events.sort((a,b) => b.version - a.version);
+    document.getElementById('dashboard-events').innerHTML = events.slice(0, 15).map(e => eventCard(e)).join('') || '<div class="empty-state">No events</div>';
+    document.getElementById('topbar-event-count').textContent = `${events.length}+ events`;
+  } catch {}
+}
+
+function eventCard(e) {
+  const data = {};
+  if (e.amount != null) data.amount = fmtBal(e.amount);
+  if (e.initial_balance != null) data.initial_balance = fmtBal(e.initial_balance);
+  if (e.target_account_id) data.to = e.target_account_id;
+  if (e.owner) data.owner = e.owner;
+  const dataStr = Object.entries(data).map(([k,v]) => `${k}: ${v}`).join(' · ');
+  return `<div class="event-item">
+    <div class="event-stripe ${stripeClass(e.type)}"></div>
+    <div class="event-content">
+      <div class="event-type">${e.type || 'UnknownEvent'}</div>
+      <div class="event-meta">${ago(e.occurred_at)} · stream: <span class="truncate" style="max-width:120px;">${e.stream_id}</span></div>
+      ${dataStr ? `<div class="event-data">${dataStr}</div>` : ''}
+    </div>
+    <div class="event-version">v${e.version}</div>
+  </div>`;
+}
+
+/* ─── TIMELINE ────────────────────────────────────────────── */
+document.getElementById('btn-load-timeline').addEventListener('click', async () => {
+  const sel = document.getElementById('timeline-stream-select');
+  const streamId = sel.value;
+  if (!streamId) { toast('Select a stream first', 'error'); return; }
+  try {
+    const d = await api('GET', `/queries/events/${streamId}`);
+    const events = d.events || [];
+    const header = document.getElementById('timeline-header');
+    header.style.display = 'flex';
+    document.getElementById('timeline-stream-label').textContent = streamId;
+    document.getElementById('timeline-event-count').textContent = `${events.length} events`;
+    document.getElementById('timeline-events').innerHTML = events.length
+      ? events.map(e => eventCard(e)).join('')
+      : '<div class="empty-state">No events in this stream</div>';
+  } catch(e) { toast('Load failed: ' + e.message, 'error'); }
+});
+
+/* ─── REPLAY ENGINE ───────────────────────────────────────── */
+document.getElementById('btn-run-replay').addEventListener('click', async () => {
+  const mode = document.getElementById('replay-mode-select').value;
+  const btn = document.getElementById('btn-run-replay');
+  const prog = document.getElementById('replay-progress');
+  const msg  = document.getElementById('replay-status-msg');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Running…';
+  prog.style.width = '30%';
+  msg.textContent = `Running ${mode} replay…`;
+  try {
+    prog.style.width = '70%';
+    const d = await api('GET', `/queries/replay?mode=${mode}`);
+    prog.style.width = '100%';
+    const m = d.metrics;
+    const v = d.validation;
+    document.getElementById('rm-mode').textContent     = m.mode;
+    document.getElementById('rm-duration').textContent = fmtMs(m.duration_ms);
+    document.getElementById('rm-events').textContent   = m.events_processed;
+    document.getElementById('rm-streams').textContent  = m.streams_processed;
+    document.getElementById('rm-valid').textContent    = v.is_valid ? '✓ PASS' : '✗ FAIL';
+    document.getElementById('rm-valid').className = 'mono ' + (v.is_valid ? 'text-success' : 'text-error');
+    document.getElementById('replay-state-out').innerHTML = syntaxHL(d.state);
+    msg.textContent = `Completed in ${fmtMs(m.duration_ms)} — processed ${m.events_processed} events`;
+    msg.style.color = 'var(--text-success, #81c784)';
+    toast(`Replay complete: ${fmtMs(m.duration_ms)}`, 'success');
+    setTimeout(() => { prog.style.width = '0%'; }, 2000);
+  } catch(e) {
+    prog.style.width = '0%';
+    msg.textContent = 'Replay failed: ' + e.message;
+    toast('Replay failed: ' + e.message, 'error');
+  }
+  btn.disabled = false;
+  btn.innerHTML = '<span class="material-icons">play_arrow</span> Run Replay';
+});
+
+/* ─── FAILURE LAB ─────────────────────────────────────────── */
+const FAILURES = [
+  { id: 'crash',       icon: 'power_off',         iconClass: 'fi-crash',   title: 'Crash Simulation',    desc: 'Wipe in-memory state, prove replay restores it',      endpoint: '/simulate/crash',      body: null,                         method: 'POST' },
+  { id: 'duplicate',   icon: 'content_copy',       iconClass: 'fi-dup',     title: 'Duplicate Events',    desc: 'Inject a duplicate event_id — idempotency guard',     endpoint: '/simulate/duplicate',  body: a => ({account_id:a, amount: 50}), method: 'POST' },
+  { id: 'out-of-order',icon: 'swap_vert',          iconClass: 'fi-order',   title: 'Out-of-Order',        desc: 'Swap event order — ordering guard must reject',        endpoint: '/simulate/out-of-order', body: a => ({account_id: a}),     method: 'POST' },
+  { id: 'missing',     icon: 'remove_circle',      iconClass: 'fi-missing', title: 'Missing Event',       desc: 'Skip event v1 — ordering gap detection',              endpoint: '/simulate/missing',    body: a => ({account_id: a}),     method: 'POST' },
+  { id: 'corruption',  icon: 'dangerous',          iconClass: 'fi-corrupt', title: 'State Corruption',    desc: 'Corrupt balance in memory, prove replay restores it', endpoint: '/simulate/corruption', body: a => ({account_id: a}),     method: 'POST' },
+  { id: 'concurrent',  icon: 'multiple_stop',      iconClass: 'fi-concur',  title: 'Concurrent Writes',   desc: '5 threads race to write — OCC ensures exactly 1 wins',endpoint: '/simulate/concurrent', body: a => ({account_id: a, num_writers: 5}), method: 'POST' }
+];
+
+function buildFailureCards() {
+  const html = FAILURES.map(f => `
+    <div class="failure-card" id="fc-${f.id}">
+      <div class="failure-card-header">
+        <div class="failure-icon ${f.iconClass}">
+          <span class="material-icons">${f.icon}</span>
+        </div>
+        <div>
+          <div class="failure-title">${f.title}</div>
+          <div class="failure-desc">${f.desc}</div>
+        </div>
+      </div>
+      <button class="btn btn-secondary" style="width:100%;justify-content:center;" onclick="runFailure('${f.id}')">
+        <span class="material-icons">science</span> Inject
+      </button>
+      <div class="failure-result" id="fr-${f.id}"></div>
+    </div>
+  `).join('');
+  document.getElementById('failure-grid').innerHTML = html;
+}
+
+// Update balance display when account selected in failure lab
+document.getElementById('failure-stream-select').addEventListener('change', async function() {
+  const v = this.value;
+  if (!v) { document.getElementById('failure-current-balance').textContent = '—'; return; }
+  try {
+    const d = await api('GET', `/queries/state/${v}`);
+    document.getElementById('failure-current-balance').textContent = fmtBal(d.balance);
+  } catch {}
+});
+
+async function runFailure(id) {
+  const accountId = document.getElementById('failure-stream-select').value;
+  const f = FAILURES.find(x => x.id === id);
+  if (!f) return;
+
+  // Crash doesn't need an account
+  if (id !== 'crash' && !accountId) { toast('Select an account first', 'error'); return; }
+
+  const btn = document.querySelector(`#fc-${id} button`);
+  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Running…';
+  const resultEl = document.getElementById(`fr-${id}`);
+  resultEl.className = 'failure-result'; resultEl.style.display = 'none';
+
+  try {
+    const body = f.body ? f.body(accountId) : null;
+    const d = await api(f.method, f.endpoint, body);
+
+    const recovered = d.recovered;
+    resultEl.className = `failure-result show ${recovered ? 'result-pass' : 'result-fail'}`;
+    resultEl.innerHTML = `
+      <strong>${recovered ? '✓ RECOVERED' : '✗ NOT RECOVERED'}</strong><br/>
+      ${d.system_response}
+      ${d.details ? `<br/><br/>` + Object.entries(d.details).map(([k,v]) => `${k}: ${JSON.stringify(v)}`).join('<br/>') : ''}
+    `;
+
+    // Append to global log
+    appendFailureLog(d, id);
+    toast(`${f.title}: ${recovered ? 'recovered ✓' : 'failed ✗'}`, recovered ? 'success' : 'error');
+
+    // Update balance chip
+    if (accountId) {
+      try {
+        const s = await api('GET', `/queries/state/${accountId}`);
+        document.getElementById('failure-current-balance').textContent = fmtBal(s.balance);
+      } catch {}
+    }
+  } catch(e) {
+    resultEl.className = 'failure-result show result-fail';
+    resultEl.innerHTML = `✗ Request failed: ${e.message}`;
+    toast('Error: ' + e.message, 'error');
+  }
+  btn.disabled = false;
+  btn.innerHTML = '<span class="material-icons">science</span> Inject';
+}
+
+function appendFailureLog(d, id) {
+  const log = document.getElementById('failure-log');
+  const emptyState = log.querySelector('.empty-state');
+  if (emptyState) emptyState.remove();
+  const item = document.createElement('div');
+  item.className = `validation-item ${d.recovered ? 'vi-ok' : 'vi-error'}`;
+  item.innerHTML = `
+    <span class="material-icons vi-icon">${d.recovered ? 'check_circle' : 'error'}</span>
+    <div>
+      <strong>${d.scenario}</strong> — ${d.system_response.slice(0, 100)}
+      <br/><span style="opacity:.6;font-size:10px;">${new Date().toLocaleTimeString()}</span>
+    </div>
+  `;
+  log.prepend(item);
+}
+
+/* ─── VALIDATION ──────────────────────────────────────────── */
+document.getElementById('btn-validate').addEventListener('click', async () => {
+  const btn = document.getElementById('btn-validate');
+  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Validating…';
+  try {
+    const d = await api('GET', '/queries/replay?mode=full');
+    const v = d.validation;
+    const accounts = Object.values(d.state.accounts || {});
+
+    // Summary
+    const isValid = v.is_valid;
+    document.getElementById('validation-summary').innerHTML = `
+      <div class="validation-item ${isValid ? 'vi-ok' : 'vi-error'}">
+        <span class="material-icons vi-icon">${isValid ? 'check_circle' : 'cancel'}</span>
+        <div>
+          <div style="font-size:15px;font-weight:700;">${isValid ? 'All Invariants Pass' : 'Violations Detected'}</div>
+          <div style="margin-top:6px;">Total system balance: <span class="text-primary">${fmtBal(v.total_balance)}</span></div>
+          <div>Findings: ${v.finding_count} issues</div>
+        </div>
+      </div>
+    `;
+
+    // Findings
+    const findings = v.findings || [];
+    if (!findings.length) {
+      document.getElementById('validation-findings').innerHTML = '<div class="validation-item vi-ok"><span class="material-icons vi-icon">check_circle</span>No findings — system state is valid</div>';
+    } else {
+      document.getElementById('validation-findings').innerHTML = findings.map(f =>
+        `<div class="validation-item vi-error"><span class="material-icons vi-icon">warning</span>${f.message || JSON.stringify(f)}</div>`
+      ).join('');
+    }
+
+    // Per-account
+    if (!accounts.length) {
+      document.getElementById('validation-accounts').innerHTML = '<div class="empty-state">No accounts</div>';
+    } else {
+      document.getElementById('validation-accounts').innerHTML = accounts.map(a => `
+        <div class="validation-item ${a.balance >= 0 ? 'vi-ok' : 'vi-error'}">
+          <span class="material-icons vi-icon">${a.balance >= 0 ? 'account_balance_wallet' : 'error'}</span>
+          <div>
+            <strong>${a.owner}</strong> <span class="mono" style="font-size:10px;opacity:.6">${a.account_id}</span><br/>
+            Balance: <span class="text-primary">${fmtBal(a.balance)}</span> · Events: ${a.event_count} · Status: ${a.status}
+          </div>
+        </div>
+      `).join('');
+    }
+    toast('Validation complete', 'success');
+  } catch(e) { toast('Validation failed: ' + e.message, 'error'); }
+  btn.disabled = false;
+  btn.innerHTML = '<span class="material-icons">verified</span> Run Validation';
+});
+
+/* ─── METRICS ─────────────────────────────────────────────── */
+document.getElementById('btn-bench').addEventListener('click', async () => {
+  const btn = document.getElementById('btn-bench');
+  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Benchmarking…';
+  const log = document.getElementById('bench-log');
+  log.textContent = 'Running full replay…\n';
+
+  try {
+    const t0 = performance.now();
+    const full = await api('GET', '/queries/replay?mode=full');
+    const tFull = performance.now() - t0;
+
+    log.textContent += `Full replay: ${fmtMs(full.metrics.duration_ms)} (${full.metrics.events_processed} events)\n`;
+    document.getElementById('perf-full-ms').textContent = fmtMs(full.metrics.duration_ms);
+
+    log.textContent += 'Running snapshot replay…\n';
+    const t1 = performance.now();
+    const snap = await api('GET', '/queries/replay?mode=snapshot');
+    const tSnap = performance.now() - t1;
+
+    log.textContent += `Snapshot replay: ${fmtMs(snap.metrics.duration_ms)} (${snap.metrics.events_processed} events)\n`;
+    document.getElementById('perf-snap-ms').textContent = fmtMs(snap.metrics.duration_ms);
+
+    const speedup = full.metrics.duration_ms / (snap.metrics.duration_ms || 1);
+    log.textContent += `\nSpeedup: ${speedup.toFixed(1)}x faster with snapshot\n`;
+    log.textContent += `Events/ms (full): ${(full.metrics.events_processed / full.metrics.duration_ms).toFixed(1)}\n`;
+    log.textContent += `Validation: ${full.validation.is_valid ? 'PASS' : 'FAIL'} (both modes match: ${full.validation.total_balance === snap.validation.total_balance})\n`;
+
+    const eventsPerMs = full.metrics.events_processed / (full.metrics.duration_ms || 1);
+    const maxBars = [
+      { label: 'Full Replay', val: full.metrics.duration_ms, max: Math.max(full.metrics.duration_ms, snap.metrics.duration_ms) + 1, cls: '' },
+      { label: 'Snapshot Replay', val: snap.metrics.duration_ms, max: Math.max(full.metrics.duration_ms, snap.metrics.duration_ms) + 1, cls: 'teal' },
+      { label: 'Events Processed', val: full.metrics.events_processed, max: full.metrics.events_processed + 1, cls: '' },
+    ];
+    document.getElementById('metric-bars').innerHTML = maxBars.map(b => `
+      <div class="metric-bar-item">
+        <div class="metric-bar-header">
+          <span class="metric-bar-label">${b.label}</span>
+          <span class="metric-bar-val">${typeof b.val === 'number' && b.label.includes('Replay') ? fmtMs(b.val) : b.val}</span>
+        </div>
+        <div class="metric-bar-track">
+          <div class="metric-bar-fill ${b.cls}" style="width:${Math.min(100, (b.val / b.max) * 100)}%"></div>
+        </div>
+      </div>
+    `).join('');
+
+    toast('Benchmarks complete', 'success');
+  } catch(e) { toast('Benchmark failed: ' + e.message, 'error'); log.textContent += `\nError: ${e.message}`; }
+  btn.disabled = false;
+  btn.innerHTML = '<span class="material-icons">speed</span> Run Benchmarks';
+});
+
+/* ─── INIT ────────────────────────────────────────────────── */
+loadDashboard();
+</script>
+</body>
+</html>
