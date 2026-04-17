@@ -635,7 +635,7 @@ let API = localStorage.getItem('rewinddb_api_url') || DEFAULT_API;
 
 function getApi() { return API; }
 function setApi(url) {
-  API = url.replace(/\/$/, '');
+  API = url.trim().replace(/\/$/, '');
   localStorage.setItem('rewinddb_api_url', API);
   document.getElementById('api-url-display').textContent = API.replace(/^https?:\/\//, '');
 }
