@@ -8,7 +8,7 @@
   <p><b>"State is a pure function of events."</b></p>
   <p>A competition-grade, zero-dependency event-sourced state recovery system. Built for the Zero-to-One Hackathon.</p>
 
-  <h3><a href="https://rewind-db.vercel.app">🔴 Try the Live Demo</a></h3>
+  <h3><a href="https://rewind-db.vercel.app/?v=2">🔴 Try the Live Demo</a></h3>
 </div>
 
 <br />
