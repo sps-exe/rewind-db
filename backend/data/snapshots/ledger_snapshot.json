@@ -79,9 +79,99 @@
       "event_count": 5,
       "created_at": "2026-04-17T20:00:36.570814+00:00",
       "last_updated": "2026-04-17T20:00:36.710700+00:00"
+    },
+    "account-demo-0c11d1": {
+      "account_id": "account-demo-0c11d1",
+      "owner": "Alice",
+      "balance": 1750.0,
+      "status": "active",
+      "version": 5,
+      "event_count": 6,
+      "created_at": "2026-04-17T20:37:19.181670+00:00",
+      "last_updated": "2026-04-17T20:37:19.347169+00:00"
+    },
+    "account-demo-b7e7aa": {
+      "account_id": "account-demo-b7e7aa",
+      "owner": "Bob",
+      "balance": 2250.0,
+      "status": "active",
+      "version": 5,
+      "event_count": 6,
+      "created_at": "2026-04-17T20:37:19.215676+00:00",
+      "last_updated": "2026-04-17T20:37:19.349752+00:00"
+    },
+    "account-demo-898059": {
+      "account_id": "account-demo-898059",
+      "owner": "Carol",
+      "balance": 2000.0,
+      "status": "active",
+      "version": 4,
+      "event_count": 5,
+      "created_at": "2026-04-17T20:37:19.229403+00:00",
+      "last_updated": "2026-04-17T20:37:19.343991+00:00"
+    },
+    "account-demo-fd1e7c": {
+      "account_id": "account-demo-fd1e7c",
+      "owner": "Alice",
+      "balance": 1750.0,
+      "status": "active",
+      "version": 5,
+      "event_count": 6,
+      "created_at": "2026-04-17T20:37:23.161385+00:00",
+      "last_updated": "2026-04-17T20:37:23.267228+00:00"
+    },
+    "account-demo-7914c9": {
+      "account_id": "account-demo-7914c9",
+      "owner": "Bob",
+      "balance": 2250.0,
+      "status": "active",
+      "version": 5,
+      "event_count": 6,
+      "created_at": "2026-04-17T20:37:23.172426+00:00",
+      "last_updated": "2026-04-17T20:37:23.270878+00:00"
+    },
+    "account-demo-634814": {
+      "account_id": "account-demo-634814",
+      "owner": "Carol",
+      "balance": 2000.0,
+      "status": "active",
+      "version": 4,
+      "event_count": 5,
+      "created_at": "2026-04-17T20:37:23.182327+00:00",
+      "last_updated": "2026-04-17T20:37:23.244214+00:00"
+    },
+    "account-demo-be4335": {
+      "account_id": "account-demo-be4335",
+      "owner": "Alice",
+      "balance": 1750.0,
+      "status": "active",
+      "version": 5,
+      "event_count": 6,
+      "created_at": "2026-04-17T21:28:52.336559+00:00",
+      "last_updated": "2026-04-17T21:28:52.456829+00:00"
+    },
+    "account-demo-42ec92": {
+      "account_id": "account-demo-42ec92",
+      "owner": "Bob",
+      "balance": 2250.0,
+      "status": "active",
+      "version": 5,
+      "event_count": 6,
+      "created_at": "2026-04-17T21:28:52.375300+00:00",
+      "last_updated": "2026-04-17T21:28:52.484041+00:00"
+    },
+    "account-demo-af851d": {
+      "account_id": "account-demo-af851d",
+      "owner": "Carol",
+      "balance": 2000.0,
+      "status": "active",
+      "version": 4,
+      "event_count": 5,
+      "created_at": "2026-04-17T21:28:52.386272+00:00",
+      "last_updated": "2026-04-17T21:28:52.454159+00:00"
     }
   },
-  "total_events_processed": 46,
+  "total_events_processed": 97,
   "checkpoint": {
     "account-demo-362af2": 6,
     "account-demo-649171": 4,
@@ -90,7 +180,16 @@
     "account-demo-2b39ec": 4,
     "account-demo-547bec": 5,
     "account-demo-577dab": 5,
-    "account-demo-f92f8f": 4
+    "account-demo-f92f8f": 4,
+    "account-demo-0c11d1": 5,
+    "account-demo-b7e7aa": 5,
+    "account-demo-898059": 4,
+    "account-demo-fd1e7c": 5,
+    "account-demo-7914c9": 5,
+    "account-demo-634814": 4,
+    "account-demo-be4335": 5,
+    "account-demo-42ec92": 5,
+    "account-demo-af851d": 4
   },
-  "saved_at": 1776457288.35176
+  "saved_at": 1776467568.271612
 }

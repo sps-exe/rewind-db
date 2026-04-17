@@ -2,8 +2,8 @@ version: "3.9"
 
 services:
   eventstore:
-    image: eventstore/eventstore:24.2.0-alpha-arm64v8
-    platform: linux/arm64
+    # Multi-arch image — works on both Apple Silicon (arm64) and Railway (amd64)
+    image: eventstore/eventstore:24.2.0
     container_name: rewind-eventstore
     environment:
       - EVENTSTORE_CLUSTER_SIZE=1
