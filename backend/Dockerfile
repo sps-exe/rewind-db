@@ -9,8 +9,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY app/ ./app/
 
-# Expose port (Railway injects $PORT at runtime)
-EXPOSE 8001
+# Railway injects PORT dynamically — must use it exactly
+ENV PORT=8080
+EXPOSE 8080
 
-# Start the server
-CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8001}"]
+# Use exec form with shell to correctly expand $PORT
+CMD uvicorn app.main:app --host 0.0.0.0 --port $PORT
